@@ -12,36 +12,25 @@ ACLOCAL_AMFLAGS=-I m4
 
 lib_LTLIBRARIES = src/libopenslide.la
 
-src_libopenslide_la_LIBADD = $(GLIB2_LIBS) $(CAIRO_LIBS) $(SQLITE3_LIBS) \
-	$(LIBXML2_LIBS) $(OPENJPEG_LIBS) $(LIBTIFF_LIBS) $(LIBPNG_LIBS) \
-	$(GDKPIXBUF_LIBS) $(ZLIB_LIBS)
+src_libopenslide_la_LIBADD = $(GLIB2_LIBS) $(CAIRO_LIBS) \
+	$(OPENJPEG_LIBS) $(LIBTIFF_LIBS) $(LIBPNG_LIBS) \
+	$(ZLIB_LIBS)
 
 src_libopenslide_la_SOURCES = \
 	src/openslide.c \
 	src/openslide-cache.c \
-	src/openslide-decode-gdkpixbuf.c \
 	src/openslide-decode-jp2k.c \
 	src/openslide-decode-jpeg.c \
 	src/openslide-decode-png.c \
-	src/openslide-decode-sqlite.c \
 	src/openslide-decode-tiff.c \
 	src/openslide-decode-tifflike.c \
-	src/openslide-decode-xml.c \
 	src/openslide-error.c \
 	src/openslide-grid.c \
 	src/openslide-hash.c \
 	src/openslide-jdatasrc.c \
 	src/openslide-tables.c \
 	src/openslide-util.c \
-	src/openslide-vendor-aperio.c \
-	src/openslide-vendor-generic-tiff.c \
-	src/openslide-vendor-hamamatsu.c \
-	src/openslide-vendor-leica.c \
-	src/openslide-vendor-mirax.c \
-	src/openslide-vendor-philips.c \
-	src/openslide-vendor-sakura.c \
-	src/openslide-vendor-trestle.c \
-	src/openslide-vendor-ventana.c
+	src/openslide-vendor-aperio.c
 
 EXTRA_PROGRAMS = src/make-tables
 CLEANFILES = src/make-tables
@@ -61,9 +50,9 @@ endif
 	$(AM_V_GEN)$(LIBTOOL) $(AM_V_lt) $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --tag=RC --mode=compile $(RC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) -i "$<" -o "$@"
 
 src_libopenslide_la_CPPFLAGS = -pedantic -D_OPENSLIDE_BUILDING_DLL \
-	$(GLIB2_CFLAGS) $(CAIRO_CFLAGS) $(SQLITE3_CFLAGS) $(LIBXML2_CFLAGS) \
+	$(GLIB2_CFLAGS) $(CAIRO_CFLAGS) \
 	$(OPENJPEG_CFLAGS) $(LIBTIFF_CFLAGS) $(LIBPNG_CFLAGS) \
-	$(GDKPIXBUF_CFLAGS) $(ZLIB_CFLAGS) -DG_LOG_DOMAIN=\"Openslide\" \
+	$(ZLIB_CFLAGS) -DG_LOG_DOMAIN=\"Openslide\" \
 	-I$(top_srcdir)/src
 
 src_libopenslide_la_LDFLAGS = -version-info 4:1:4 -no-undefined
@@ -75,14 +64,11 @@ pkginclude_HEADERS = \
 
 noinst_HEADERS = \
 	src/openslide-cairo.h \
-	src/openslide-decode-gdkpixbuf.h \
 	src/openslide-decode-jp2k.h \
 	src/openslide-decode-jpeg.h \
 	src/openslide-decode-png.h \
-	src/openslide-decode-sqlite.h \
 	src/openslide-decode-tiff.h \
 	src/openslide-decode-tifflike.h \
-	src/openslide-decode-xml.h \
 	src/openslide-error.h \
 	src/openslide-hash.h \
 	src/openslide-private.h \

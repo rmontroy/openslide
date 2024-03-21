@@ -123,9 +123,6 @@ CFLAGS="$old_CFLAGS"
 PKG_CHECK_MODULES(GLIB2, [glib-2.0 >= 2.16, gthread-2.0, gio-2.0, gobject-2.0])
 PKG_CHECK_MODULES(CAIRO, [cairo >= 1.2])
 PKG_CHECK_MODULES(LIBPNG, [libpng > 1.2])
-PKG_CHECK_MODULES(GDKPIXBUF, [gdk-pixbuf-2.0 >= 2.14])
-PKG_CHECK_MODULES(LIBXML2, [libxml-2.0])
-PKG_CHECK_MODULES(SQLITE3, [sqlite3 >= 3.6.20])
 
 # optional
 PKG_CHECK_MODULES(VALGRIND, [valgrind], [

@@ -29,7 +29,6 @@
 
 #include <glib.h>
 #include <glib-object.h>
-#include <libxml/parser.h>
 
 #include "openslide-cairo.h"
 #include "openslide-error.h"
@@ -39,16 +38,16 @@ const char _openslide_release_info[] = "OpenSlide " SUFFIXED_VERSION ", copyrigh
 static const char * const EMPTY_STRING_ARRAY[] = { NULL };
 
 static const struct _openslide_format *formats[] = {
-  &_openslide_format_mirax,
-  &_openslide_format_hamamatsu_vms_vmu,
-  &_openslide_format_hamamatsu_ndpi,
-  &_openslide_format_sakura,
-  &_openslide_format_trestle,
+  // &_openslide_format_mirax,
+  // &_openslide_format_hamamatsu_vms_vmu,
+  // &_openslide_format_hamamatsu_ndpi,
+  // &_openslide_format_sakura,
+  // &_openslide_format_trestle,
   &_openslide_format_aperio,
-  &_openslide_format_leica,
-  &_openslide_format_philips,
-  &_openslide_format_ventana,
-  &_openslide_format_generic_tiff,
+  // &_openslide_format_leica,
+  // &_openslide_format_philips,
+  // &_openslide_format_ventana,
+  // &_openslide_format_generic_tiff,
   NULL,
 };
 
@@ -62,8 +61,6 @@ static void __attribute__((constructor)) _openslide_init(void) {
   }
   // initialize GObject
   g_type_init();
-  // init libxml2
-  xmlInitParser();
   // parse debug options
   _openslide_debug_init();
   openslide_was_dynamically_loaded = true;
@@ -237,11 +234,7 @@ openslide_t *openslide_open(const char *filename) {
 
   // detect format
   struct _openslide_tifflike *tl;
-  const struct _openslide_format *format = detect_format(filename, &tl);
-  if (!format) {
-    // not a slide file
-    return NULL;
-  }
+  const struct _openslide_format *format = &_openslide_format_aperio;
 
   // alloc memory
   openslide_t *osr = create_osr();
