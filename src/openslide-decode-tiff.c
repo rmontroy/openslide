@@ -33,6 +33,8 @@
 #include <cairo.h>
 
 #include "openslide-hash.h"
+#include <cpl_vsi.h>
+#include <cpl_error.h>
 
 #define HANDLE_CACHE_MAX 32
 
@@ -41,13 +43,6 @@ struct _openslide_tiffcache {
   GQueue *cache;
   GMutex lock;
   int outstanding;
-};
-
-// not thread-safe, like libtiff
-struct tiff_file_handle {
-  struct _openslide_tiffcache *tc;
-  int64_t offset;
-  int64_t size;
 };
 
 struct associated_image {
@@ -532,20 +527,9 @@ bool _openslide_tiff_read_icc_profile(openslide_t *osr,
 }
 
 static tsize_t tiff_do_read(thandle_t th, tdata_t buf, tsize_t size) {
-  struct tiff_file_handle *hdl = th;
-
-  // don't leave the file handle open between calls
-  // also ensures FD_CLOEXEC is set
-  g_autoptr(_openslide_file) f = _openslide_fopen(hdl->tc->filename, NULL);
-  if (f == NULL) {
-    return 0;
-  }
-  if (!_openslide_fseek(f, hdl->offset, SEEK_SET, NULL)) {
-    return 0;
-  }
-  int64_t rsize = _openslide_fread(f, buf, size);
-  hdl->offset += rsize;
-  return rsize;
+  size_t result = VSIFReadL( buf, 1, size, (VSILFILE *) th );
+  //g_debug("Read %ld bytes", result);
+  return result;
 }
 
 static tsize_t tiff_do_write(thandle_t th G_GNUC_UNUSED,
@@ -556,103 +540,60 @@ static tsize_t tiff_do_write(thandle_t th G_GNUC_UNUSED,
 }
 
 static toff_t tiff_do_seek(thandle_t th, toff_t offset, int whence) {
-  struct tiff_file_handle *hdl = th;
-
-  switch (whence) {
-  case SEEK_SET:
-    hdl->offset = offset;
-    break;
-  case SEEK_CUR:
-    hdl->offset += offset;
-    break;
-  case SEEK_END:
-    hdl->offset = hdl->size + offset;
-    break;
-  default:
-    g_assert_not_reached();
-  }
-  return hdl->offset;
+  if( VSIFSeekL( (VSILFILE *) th, offset, whence ) == 0 )
+    return (toff_t) VSIFTellL( (VSILFILE *) th );
+  else
+    return (toff_t) -1;
 }
 
 static int tiff_do_close(thandle_t th) {
-  struct tiff_file_handle *hdl = th;
-
-  g_free(hdl);
-  return 0;
+  int result = VSIFCloseL( (VSILFILE *) th );
+  //g_debug("tiff_s3_close returned: %d", result);
+  return result;
 }
 
 static toff_t tiff_do_size(thandle_t th) {
-  struct tiff_file_handle *hdl = th;
+  vsi_l_offset  old_off;
+  toff_t        file_size;
 
-  return hdl->size;
+  old_off = VSIFTellL( (VSILFILE *) th );
+  VSIFSeekL( (VSILFILE *) th, 0, SEEK_END );
+
+  file_size = (toff_t) VSIFTellL( (VSILFILE *) th );
+  VSIFSeekL( (VSILFILE *) th, old_off, SEEK_SET );
+
+  return file_size;
 }
 
 #undef TIFFClientOpen
 static TIFF *tiff_open(struct _openslide_tiffcache *tc, GError **err) {
   // open
-  g_autoptr(_openslide_file) f = _openslide_fopen(tc->filename, err);
-  if (f == NULL) {
+  VSILFILE *fp = VSIFOpenL( tc->filename, "rb");
+  if (fp == NULL) {
+    int my_errno = CPLGetLastErrorNo();
+    g_set_error(err, G_FILE_ERROR, g_file_error_from_errno(my_errno),
+                "Couldn't open %s; errno: %d; errmsg: %s", tc->filename, my_errno, CPLGetLastErrorMsg());
     return NULL;
-  }
+	}
 
   // read magic
-  uint8_t buf[4];
-  if (_openslide_fread(f, buf, 4) != 4) {
-    // can't read
-    g_set_error(err, OPENSLIDE_ERROR, OPENSLIDE_ERROR_FAILED,
-                "Couldn't read TIFF magic number for %s", tc->filename);
-    return NULL;
-  }
-
-  // get size
-  int64_t size = _openslide_fsize(f, err);
-  if (size == -1) {
-    g_prefix_error(err, "Couldn't get size of %s: ", tc->filename);
-    return NULL;
-  }
-
-  // check magic
-  // TODO: remove if libtiff gets private error/warning callbacks
-  if (buf[0] != buf[1]) {
-    g_set_error(err, OPENSLIDE_ERROR, OPENSLIDE_ERROR_FAILED,
-                "Not a TIFF file: %s", tc->filename);
-    return NULL;
-  }
-  uint16_t version;
-  switch (buf[0]) {
-  case 'M':
-    // big endian
-    version = (buf[2] << 8) | buf[3];
-    break;
-  case 'I':
-    // little endian
-    version = (buf[3] << 8) | buf[2];
-    break;
-  default:
-    g_set_error(err, OPENSLIDE_ERROR, OPENSLIDE_ERROR_FAILED,
-                "Not a TIFF file: %s", tc->filename);
-    return NULL;
-  }
-  if (version != 42 && version != 43) {
-    g_set_error(err, OPENSLIDE_ERROR, OPENSLIDE_ERROR_FAILED,
-                "Not a TIFF file: %s", tc->filename);
-    return NULL;
-  }
-
-  // allocate
-  struct tiff_file_handle *hdl = g_new0(struct tiff_file_handle, 1);
-  hdl->tc = tc;
-  hdl->size = size;
+  // uint8_t buf[4];
+  // if (VSIFReadL(buf, 4, 1, fp) != 1) {
+  //   // can't read
+  //   g_set_error(err, OPENSLIDE_ERROR, OPENSLIDE_ERROR_FAILED,
+  //               "Couldn't read TIFF magic number for %s", tc->filename);
+  //   return NULL;
+  // }
 
   // TIFFOpen
   // mode: m disables mmap to avoid sigbus and other mmap fragility
-  TIFF *tiff = TIFFClientOpen(tc->filename, "rm", hdl,
+  TIFF *tiff = TIFFClientOpen(tc->filename, "rm", (thandle_t) fp,
                               tiff_do_read, tiff_do_write, tiff_do_seek,
                               tiff_do_close, tiff_do_size, NULL, NULL);
   if (tiff == NULL) {
     g_set_error(err, OPENSLIDE_ERROR, OPENSLIDE_ERROR_FAILED,
                 "Invalid TIFF: %s", tc->filename);
-    tiff_do_close(hdl);
+    tiff_do_close(fp);
   }
   return tiff;
 }

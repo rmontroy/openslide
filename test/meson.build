@@ -41,19 +41,3 @@ executable(
 
 # Tests
 test('synth', test_synth)
-
-# Driver
-configure_file(
-  input : 'driver.in',
-  output : 'driver',
-  configuration : {
-    'SRCDIR': meson.current_source_dir(),
-    'BUILDDIR': meson.current_build_dir(),
-    # Path prefix for glib Valgrind suppressions
-    'GLIB2_DATADIR': gio_dep.get_variable(
-      default_value : '',
-      pkgconfig : 'datadir'
-    ),
-    'FEATURES': ' '.join(feature_flags),
-  },
-)
