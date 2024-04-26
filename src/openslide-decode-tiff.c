@@ -29,6 +29,7 @@
 
 #include <glib.h>
 #include <tiffio.h>
+#include <tiffS3.h>
 
 #include <stdio.h>
 #include <stdarg.h>
@@ -50,9 +51,7 @@ struct _openslide_tiffcache {
 // not thread-safe, like libtiff
 struct tiff_file_handle {
   struct _openslide_tiffcache *tc;
-  struct _openslide_file *f;
-  int64_t offset;
-  int64_t size;
+  struct Context *context;
   char *last_error;
 };
 
@@ -470,12 +469,9 @@ bool _openslide_tiff_add_associated_image(openslide_t *osr,
                                           const char *name,
                                           struct _openslide_tiffcache *tc,
                                           tdir_t dir,
+                                          TIFF *tiff,
                                           GError **err) {
-  g_auto(_openslide_cached_tiff) ct = _openslide_tiffcache_get(tc, err);
-  bool ret = false;
-  if (ct.tiff) {
-    ret = _add_associated_image(osr, name, tc, dir, ct.tiff, err);
-  }
+  bool ret = _add_associated_image(osr, name, tc, dir, tiff, err);
 
   // safe even if successful
   g_prefix_error(err, "Can't read %s associated image: ", name);
@@ -549,23 +545,8 @@ void _openslide_tiff_error(GError **err, TIFF *tiff, const char *fmt, ...) {
 
 static tsize_t tiff_do_read(thandle_t th, tdata_t buf, tsize_t size) {
   struct tiff_file_handle *hdl = th;
-
-  // Open the file handle on first use.  cached_tiff_put will close it so it
-  // doesn't stay open across API calls.  Also ensures FD_CLOEXEC is set.
-  if (!hdl->f) {
-    g_autoptr(_openslide_file) f = _openslide_fopen(hdl->tc->filename, NULL);
-    if (!f) {
-      return 0;
-    }
-    // restore file position
-    if (!_openslide_fseek(f, hdl->offset, SEEK_SET, NULL)) {
-      return 0;
-    }
-    hdl->f = g_steal_pointer(&f);
-  }
-  int64_t rsize = _openslide_fread(hdl->f, buf, size);
-  hdl->offset += rsize;
-  return rsize;
+  tsize_t result = tiff_s3_read(hdl->context, buf, size);
+  return result;
 }
 
 static tsize_t tiff_do_write(thandle_t th G_GNUC_UNUSED,
@@ -577,15 +558,8 @@ static tsize_t tiff_do_write(thandle_t th G_GNUC_UNUSED,
 
 static toff_t tiff_do_seek(thandle_t th, toff_t offset, int whence) {
   struct tiff_file_handle *hdl = th;
-  int64_t new_offset =
-    _openslide_compute_seek(hdl->offset, hdl->size, offset, whence);
-  if (hdl->f) {
-    if (!_openslide_fseek(hdl->f, new_offset, SEEK_SET, NULL)) {
-      return -1;
-    }
-  }
-  hdl->offset = new_offset;
-  return new_offset;
+  toff_t result = tiff_s3_seek(hdl->context, offset, whence);
+  return result;
 }
 
 static void tiff_clear_error(struct tiff_file_handle *hdl) {
@@ -601,17 +575,14 @@ static int tiff_do_close(thandle_t th) {
   struct tiff_file_handle *hdl = th;
 
   tiff_clear_error(hdl);
-  if (hdl->f) {
-    _openslide_fclose(hdl->f);
-  }
-  g_free(hdl);
-  return 0;
+  int result = tiff_s3_close(hdl->context);
+  return result;
 }
 
 static toff_t tiff_do_size(thandle_t th) {
   struct tiff_file_handle *hdl = th;
-
-  return hdl->size;
+  toff_t result = tiff_s3_size(hdl->context);
+  return result;
 }
 
 #ifdef HAVE_TIFF_LOG_CALLBACKS
@@ -641,23 +612,17 @@ static int tiff_do_error(TIFF *tiff, void *data G_GNUC_UNUSED,
 
 static TIFF *tiff_open(struct _openslide_tiffcache *tc, GError **err) {
   // open
-  g_autoptr(_openslide_file) f = _openslide_fopen(tc->filename, err);
-  if (f == NULL) {
-    return NULL;
-  }
-
-  // get size
-  int64_t size = _openslide_fsize(f, err);
-  if (size == -1) {
-    g_prefix_error(err, "Couldn't get size of %s: ", tc->filename);
+  void* ctx = tiff_s3_open(tc->filename);
+  if (ctx == NULL) {
+    g_set_error(err, OPENSLIDE_ERROR, OPENSLIDE_ERROR_FAILED,
+                "Failed to open TIFF: %s", tc->filename);
     return NULL;
   }
 
   // allocate
   struct tiff_file_handle *hdl = g_new0(struct tiff_file_handle, 1);
   hdl->tc = tc;
-  hdl->f = g_steal_pointer(&f);
-  hdl->size = size;
+  hdl->context = (struct Context*)ctx;
 
   // TIFFOpen
   // mode: m disables mmap to avoid sigbus and other mmap fragility
@@ -729,9 +694,6 @@ void _openslide_cached_tiff_put(struct _openslide_cached_tiff *ct) {
   tc->outstanding--;
   if (g_queue_get_length(tc->cache) < HANDLE_CACHE_MAX) {
     tiff_clear_error(hdl);
-    if (hdl->f) {
-      _openslide_fclose(g_steal_pointer(&hdl->f));
-    }
     g_queue_push_head(tc->cache, g_steal_pointer(&tiff));
   }
   g_mutex_unlock(&tc->lock);

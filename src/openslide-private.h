@@ -137,17 +137,6 @@ struct _openslide_format {
 };
 
 extern const struct _openslide_format _openslide_format_aperio;
-extern const struct _openslide_format _openslide_format_dicom;
-extern const struct _openslide_format _openslide_format_generic_tiff;
-extern const struct _openslide_format _openslide_format_hamamatsu_ndpi;
-extern const struct _openslide_format _openslide_format_hamamatsu_vms_vmu;
-extern const struct _openslide_format _openslide_format_leica;
-extern const struct _openslide_format _openslide_format_mirax;
-extern const struct _openslide_format _openslide_format_philips_tiff;
-extern const struct _openslide_format _openslide_format_sakura;
-extern const struct _openslide_format _openslide_format_synthetic;
-extern const struct _openslide_format _openslide_format_trestle;
-extern const struct _openslide_format _openslide_format_ventana;
 
 /* g_key_file_new() + g_key_file_load_from_file() wrapper */
 GKeyFile *_openslide_read_key_file(const char *filename, int32_t max_size,

@@ -356,8 +356,9 @@ static bool add_associated_image(openslide_t *osr,
   }
 
   return _openslide_tiff_add_associated_image(osr, name, tc,
-                                              TIFFCurrentDirectory(tiff),
-                                              err);
+                               TIFFCurrentDirectory(tiff),
+                               tiff,
+                               err);
 }
 
 static void propagate_missing_tile(void *key, void *value G_GNUC_UNUSED,
@@ -388,7 +389,7 @@ static void propagate_missing_tile(void *key, void *value G_GNUC_UNUSED,
 
 static bool aperio_open(openslide_t *osr,
                         const char *filename,
-                        struct _openslide_tifflike *tl,
+                        struct _openslide_tifflike *tl G_GNUC_UNUSED,
                         struct _openslide_hash *quickhash1, GError **err) {
   // open TIFF
   g_autoptr(_openslide_tiffcache) tc = _openslide_tiffcache_create(filename);
@@ -533,14 +534,8 @@ static bool aperio_open(openslide_t *osr,
     return false;
   }
 
-  // set hash and properties
-  struct level *top_level = level_array->pdata[level_array->len - 1];
-  if (!_openslide_tifflike_init_properties_and_hash(osr, tl, quickhash1,
-                                                    top_level->tiffl.dir,
-                                                    0,
-                                                    err)) {
-    return false;
-  }
+  // DON'T set quickhash property
+  _openslide_hash_disable(quickhash1);
 
   // allocate private data
   struct aperio_ops_data *data = g_new0(struct aperio_ops_data, 1);
