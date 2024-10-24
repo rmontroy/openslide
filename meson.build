@@ -1,14 +1,15 @@
 project(
-  'openslide', 'c',
+  'openslide', 'c', 'cpp',
   version : '4.0.0',
   license : 'LGPL-2.1-only',
   default_options : [
     'buildtype=debugoptimized',
     'c_std=gnu99',
+    'cpp_std=c++11',
     'warning_level=2',
   ],
   # limited by Ubuntu 20.04
-  meson_version : '>=0.53',
+  meson_version : '>=0.54',
 )
 # Shared library version.  Follow SemVer rules.
 soversion = '1.0.0'
@@ -97,24 +98,16 @@ endforeach
 feature_flags = []
 zlib_dep       = dependency('zlib')
 jpeg_dep       = dependency('libjpeg')
-png_dep        = dependency('libpng', version : '>1.2')
 openjpeg_dep   = dependency('libopenjp2', version : '>=2.1.0')
 tiff_dep       = dependency('libtiff-4')
 glib_dep       = dependency('glib-2.0', version : '>=2.56')
 gio_dep        = dependency('gio-2.0')
 gobject_dep    = dependency('gobject-2.0')
 cairo_dep      = dependency('cairo', version : '>=1.2')
-gdk_pixbuf_dep = dependency('gdk-pixbuf-2.0', version : '>=2.14')
-xml_dep        = dependency('libxml-2.0')
-sqlite_dep     = dependency('sqlite3', version : '>=3.14')
-dicom_dep      = dependency(
-  'libdicom',
-  # avoid 'check' dependency
-  default_options : ['tests=false'],
-  fallback : ['libdicom', 'libdicom_dep'],
-  version : '>=1.0.0',
-)
 valgrind_dep   = dependency('valgrind', required : false)
+
+libremotetiff_proj = subproject('libremotetiff')
+libremotetiff_dep = libremotetiff_proj.get_variable('libremotetiff_dep')
 
 doxygen = find_program(
   'doxygen',
@@ -164,7 +157,7 @@ if not get_option('test').disabled() and not get_option('check_windows_abi_compa
 endif
 
 # Test suite options
-visibility = get_option('_export_internal_symbols') ? '' : 'hidden'
+visibility = 'hidden'
 libopenslide_link_args = (
   # On macOS, openslide-bin needs to keep non-OpenSlide symbols out of the
   # combined dylib, but it can't do it via global link options without
@@ -238,7 +231,6 @@ config_h_include = include_directories('.')
 # Subdirs
 subdir('src')
 subdir('common')
-subdir('tools')
 if not get_option('test').disabled()
   subdir('test')
 endif

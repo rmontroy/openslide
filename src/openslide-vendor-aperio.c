@@ -356,8 +356,9 @@ static bool add_associated_image(openslide_t *osr,
   }
 
   return _openslide_tiff_add_associated_image(osr, name, tc,
-                                              TIFFCurrentDirectory(tiff),
-                                              err);
+                               TIFFCurrentDirectory(tiff),
+                               tiff,
+                               err);
 }
 
 static void propagate_missing_tile(void *key, void *value G_GNUC_UNUSED,
@@ -388,7 +389,7 @@ static void propagate_missing_tile(void *key, void *value G_GNUC_UNUSED,
 
 static bool aperio_open(openslide_t *osr,
                         const char *filename,
-                        struct _openslide_tifflike *tl,
+                        struct _openslide_tifflike *tl G_GNUC_UNUSED,
                         struct _openslide_hash *quickhash1, GError **err) {
   // open TIFF
   g_autoptr(_openslide_tiffcache) tc = _openslide_tiffcache_create(filename);
@@ -396,6 +397,20 @@ static bool aperio_open(openslide_t *osr,
   if (!ct.tiff) {
     return false;
   }
+
+  // read directory 0 properties while we're already here
+  char *image_desc;
+  if (!TIFFGetField(ct.tiff, TIFFTAG_IMAGEDESCRIPTION, &image_desc)) {
+    _openslide_tiff_error(err, ct.tiff, "Couldn't read ImageDescription field");
+    return false;
+  }
+
+  g_auto(GStrv) props = g_strsplit(image_desc, "|", -1);
+  add_properties(osr, props);
+
+  // skip getting icc profile size
+  // 0 means no profile available
+  osr->icc_profile_size = 0;
 
   /*
    * http://www.aperio.com/documents/api/Aperio_Digital_Slides_and_Third-party_data_interchange.pdf
@@ -512,35 +527,8 @@ static bool aperio_open(openslide_t *osr,
                          level_array->pdata[i + 1]);
   }
 
-  // read properties
-  if (!_openslide_tiff_set_dir(ct.tiff, 0, err)) {
-    return false;
-  }
-  char *image_desc;
-  if (!TIFFGetField(ct.tiff, TIFFTAG_IMAGEDESCRIPTION, &image_desc)) {
-    _openslide_tiff_error(err, ct.tiff, "Couldn't read ImageDescription field");
-    return false;
-  }
-  g_auto(GStrv) props = g_strsplit(image_desc, "|", -1);
-  add_properties(osr, props);
-
-  // get icc profile size, if present
-  struct level *base_level = level_array->pdata[0];
-  if (!_openslide_tiff_get_icc_profile_size(&base_level->tiffl,
-                                            ct.tiff,
-                                            &osr->icc_profile_size,
-                                            err)) {
-    return false;
-  }
-
-  // set hash and properties
-  struct level *top_level = level_array->pdata[level_array->len - 1];
-  if (!_openslide_tifflike_init_properties_and_hash(osr, tl, quickhash1,
-                                                    top_level->tiffl.dir,
-                                                    0,
-                                                    err)) {
-    return false;
-  }
+  // DON'T set quickhash property
+  _openslide_hash_disable(quickhash1);
 
   // allocate private data
   struct aperio_ops_data *data = g_new0(struct aperio_ops_data, 1);

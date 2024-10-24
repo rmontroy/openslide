@@ -31,7 +31,6 @@
 #include <glib.h>
 #include <glib-object.h>
 #include <cairo.h>
-#include <libxml/parser.h>
 
 #include "openslide-error.h"
 
@@ -39,28 +38,10 @@ const char _openslide_release_info[] = "OpenSlide " SUFFIXED_VERSION ", copyrigh
 
 static const char * const EMPTY_STRING_ARRAY[] = { NULL };
 
-static const struct _openslide_format *formats[] = {
-  &_openslide_format_synthetic,
-  &_openslide_format_mirax,
-  &_openslide_format_dicom,
-  &_openslide_format_hamamatsu_vms_vmu,
-  &_openslide_format_hamamatsu_ndpi,
-  &_openslide_format_sakura,
-  &_openslide_format_trestle,
-  &_openslide_format_aperio,
-  &_openslide_format_leica,
-  &_openslide_format_philips_tiff,
-  &_openslide_format_ventana,
-  &_openslide_format_generic_tiff,
-  NULL,
-};
-
 static bool openslide_was_dynamically_loaded;
 
 // called from shared-library constructor!
 static void __attribute__((constructor)) _openslide_init(void) {
-  // init libxml2
-  xmlInitParser();
   // parse debug options
   _openslide_debug_init();
   openslide_was_dynamically_loaded = true;
@@ -117,42 +98,10 @@ static void *verify_pixman_works(void *arg G_GNUC_UNUSED) {
   return GINT_TO_POINTER(dest[8 * 16 + 8] != 0);
 }
 
-static const struct _openslide_format *detect_format(const char *filename,
-                                                     struct _openslide_tifflike **tl_OUT) {
-  GError *tmp_err = NULL;
-
-  g_autoptr(_openslide_tifflike) tl =
-    _openslide_tifflike_create(filename, &tmp_err);
-  if (!tl) {
-    if (_openslide_debug(OPENSLIDE_DEBUG_DETECTION)) {
-      g_message("tifflike: %s", tmp_err->message);
-    }
-    g_clear_error(&tmp_err);
-  }
-
-  for (const struct _openslide_format **cur = formats; *cur; cur++) {
-    const struct _openslide_format *format = *cur;
-
-    g_assert(format->name && format->vendor &&
-             format->detect && format->open);
-
-    if (format->detect(filename, tl, &tmp_err)) {
-      // success!
-      if (tl_OUT) {
-        *tl_OUT = g_steal_pointer(&tl);
-      }
-      return format;
-    }
-
-    // reset for next format
-    if (_openslide_debug(OPENSLIDE_DEBUG_DETECTION)) {
-      g_message("%s: %s", format->name, tmp_err->message);
-    }
-    g_clear_error(&tmp_err);
-  }
-
+static const struct _openslide_format *detect_format(const char *filename G_GNUC_UNUSED,
+                                                     struct _openslide_tifflike **tl_OUT G_GNUC_UNUSED) {
   // no match
-  return NULL;
+  return &_openslide_format_aperio;
 }
 
 static bool open_backend(openslide_t *osr,

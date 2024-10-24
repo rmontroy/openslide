@@ -50,9 +50,13 @@ struct _openslide_tiffcache {
 // not thread-safe, like libtiff
 struct tiff_file_handle {
   struct _openslide_tiffcache *tc;
+#ifdef OVERRIDE_TIFFCLIENT_CALLBACKS
+  void *ctx;
+#else
   struct _openslide_file *f;
   int64_t offset;
   int64_t size;
+#endif
   char *last_error;
 };
 
@@ -470,12 +474,9 @@ bool _openslide_tiff_add_associated_image(openslide_t *osr,
                                           const char *name,
                                           struct _openslide_tiffcache *tc,
                                           tdir_t dir,
+                                          TIFF *tiff,
                                           GError **err) {
-  g_auto(_openslide_cached_tiff) ct = _openslide_tiffcache_get(tc, err);
-  bool ret = false;
-  if (ct.tiff) {
-    ret = _add_associated_image(osr, name, tc, dir, ct.tiff, err);
-  }
+  bool ret = _add_associated_image(osr, name, tc, dir, tiff, err);
 
   // safe even if successful
   g_prefix_error(err, "Can't read %s associated image: ", name);
@@ -547,9 +548,18 @@ void _openslide_tiff_error(GError **err, TIFF *tiff, const char *fmt, ...) {
   g_set_error_literal(err, OPENSLIDE_ERROR, OPENSLIDE_ERROR_FAILED, str->str);
 }
 
+#ifdef OVERRIDE_TIFFCLIENT_CALLBACKS
+extern void* remotetiff_open(const char *filename);
+extern tsize_t remotetiff_read(thandle_t th, tdata_t buf, tsize_t size);
+extern toff_t remotetiff_seek(thandle_t th, toff_t offset, int whence);
+extern int remotetiff_close(thandle_t th);
+extern toff_t remotetiff_size(thandle_t th);
+#endif
+
 static tsize_t tiff_do_read(thandle_t th, tdata_t buf, tsize_t size) {
   struct tiff_file_handle *hdl = th;
 
+#ifndef OVERRIDE_TIFFCLIENT_CALLBACKS
   // Open the file handle on first use.  cached_tiff_put will close it so it
   // doesn't stay open across API calls.  Also ensures FD_CLOEXEC is set.
   if (!hdl->f) {
@@ -565,6 +575,9 @@ static tsize_t tiff_do_read(thandle_t th, tdata_t buf, tsize_t size) {
   }
   int64_t rsize = _openslide_fread(hdl->f, buf, size);
   hdl->offset += rsize;
+#else
+  tsize_t rsize = remotetiff_read(hdl->ctx, buf, size);
+#endif
   return rsize;
 }
 
@@ -577,6 +590,7 @@ static tsize_t tiff_do_write(thandle_t th G_GNUC_UNUSED,
 
 static toff_t tiff_do_seek(thandle_t th, toff_t offset, int whence) {
   struct tiff_file_handle *hdl = th;
+#ifndef OVERRIDE_TIFFCLIENT_CALLBACKS
   int64_t new_offset =
     _openslide_compute_seek(hdl->offset, hdl->size, offset, whence);
   if (hdl->f) {
@@ -585,6 +599,9 @@ static toff_t tiff_do_seek(thandle_t th, toff_t offset, int whence) {
     }
   }
   hdl->offset = new_offset;
+#else
+  toff_t new_offset = remotetiff_seek(hdl->ctx, offset, whence);
+#endif
   return new_offset;
 }
 
@@ -600,10 +617,14 @@ static void tiff_clear_error(struct tiff_file_handle *hdl) {
 static int tiff_do_close(thandle_t th) {
   struct tiff_file_handle *hdl = th;
 
+#ifndef OVERRIDE_TIFFCLIENT_CALLBACKS
   tiff_clear_error(hdl);
   if (hdl->f) {
     _openslide_fclose(hdl->f);
   }
+#else
+  remotetiff_close(hdl->ctx);
+#endif
   g_free(hdl);
   return 0;
 }
@@ -611,7 +632,11 @@ static int tiff_do_close(thandle_t th) {
 static toff_t tiff_do_size(thandle_t th) {
   struct tiff_file_handle *hdl = th;
 
+#ifndef OVERRIDE_TIFFCLIENT_CALLBACKS
   return hdl->size;
+#else
+  return remotetiff_size(hdl->ctx);
+#endif
 }
 
 #ifdef HAVE_TIFF_LOG_CALLBACKS
@@ -641,6 +666,14 @@ static int tiff_do_error(TIFF *tiff, void *data G_GNUC_UNUSED,
 
 static TIFF *tiff_open(struct _openslide_tiffcache *tc, GError **err) {
   // open
+#ifdef OVERRIDE_TIFFCLIENT_CALLBACKS
+  void* ctx = remotetiff_open(tc->filename);
+  if (ctx == NULL) {
+    g_set_error(err, OPENSLIDE_ERROR, OPENSLIDE_ERROR_FAILED,
+                "Failed to open TIFF: %s", tc->filename);
+    return NULL;
+  }
+#else
   g_autoptr(_openslide_file) f = _openslide_fopen(tc->filename, err);
   if (f == NULL) {
     return NULL;
@@ -652,12 +685,18 @@ static TIFF *tiff_open(struct _openslide_tiffcache *tc, GError **err) {
     g_prefix_error(err, "Couldn't get size of %s: ", tc->filename);
     return NULL;
   }
+#endif
 
   // allocate
   struct tiff_file_handle *hdl = g_new0(struct tiff_file_handle, 1);
   hdl->tc = tc;
+#ifdef OVERRIDE_TIFFCLIENT_CALLBACKS
+  hdl->ctx = ctx;
+#else
+  // allocate
   hdl->f = g_steal_pointer(&f);
   hdl->size = size;
+#endif
 
   // TIFFOpen
   // mode: m disables mmap to avoid sigbus and other mmap fragility
@@ -729,9 +768,11 @@ void _openslide_cached_tiff_put(struct _openslide_cached_tiff *ct) {
   tc->outstanding--;
   if (g_queue_get_length(tc->cache) < HANDLE_CACHE_MAX) {
     tiff_clear_error(hdl);
+#ifndef OVERRIDE_TIFFCLIENT_CALLBACKS
     if (hdl->f) {
       _openslide_fclose(g_steal_pointer(&hdl->f));
     }
+#endif
     g_queue_push_head(tc->cache, g_steal_pointer(&tiff));
   }
   g_mutex_unlock(&tc->lock);

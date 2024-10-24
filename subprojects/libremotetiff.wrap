@@ -1,0 +1,4 @@
+[wrap-git]
+url = https://github.com/rmontroy/azure_storage_openslide.git
+revision = head
+depth = 1
