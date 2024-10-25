@@ -5,7 +5,6 @@ project(
   default_options : [
     'buildtype=debugoptimized',
     'c_std=gnu99',
-    'cpp_std=c++11',
     'warning_level=2',
   ],
   # limited by Ubuntu 20.04
