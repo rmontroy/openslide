@@ -2,3 +2,6 @@
 url = https://github.com/rmontroy/azure_storage_openslide.git
 revision = main
 depth = 1
+
+[provide]
+libremotetiff = libremotetiff_dep

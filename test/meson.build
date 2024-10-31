@@ -14,10 +14,6 @@ executable(
   dependencies : test_deps,
 )
 executable(
-  'mosaic', 'mosaic.c',
-  dependencies : [test_deps, cairo_dep],
-)
-executable(
   'parallel', 'parallel.c',
   dependencies : test_deps,
 )

@@ -4,7 +4,6 @@ if meson.version().version_compare('>=0.61') and host_machine.system() != 'windo
   symlink_targets = [
     'openslide-quickhash1sum',
     'openslide-show-properties',
-    'openslide-write-png',
   ]
   foreach target : symlink_targets
     install_symlink(
@@ -18,7 +17,6 @@ else
   tools_binaries = [
     'openslide-quickhash1sum',
     'openslide-show-properties',
-    'openslide-write-png',
     'slidetool',
   ]
 endif
@@ -38,7 +36,6 @@ foreach target : tools_binaries
       openslide_dep,
       openslide_common_dep,
       glib_dep,
-      png_dep,
     ],
     install : true,
     install_tag : 'bin',
@@ -49,7 +46,6 @@ endforeach
 mans = [
   'openslide-quickhash1sum',
   'openslide-show-properties',
-  'openslide-write-png',
   'slidetool',
 ]
 foreach m : mans

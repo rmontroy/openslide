@@ -62,7 +62,7 @@ openslide_sources = [
 libopenslide_link_args += [
   '-Wl,--gc-sections',
 ]
-libopenslide = library('openslide',
+libopenslide = shared_library('openslide',
   openslide_sources,
   version : soversion,
   c_args : [

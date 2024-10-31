@@ -6,9 +6,11 @@ project(
     'buildtype=debugoptimized',
     'c_std=gnu99',
     'warning_level=2',
+    'default_library=static',
+    'wrap_mode=nofallback',
   ],
   # limited by Ubuntu 20.04
-  meson_version : '>=0.54',
+  meson_version : '>=1.2',
 )
 # Shared library version.  Follow SemVer rules.
 soversion = '1.0.0'
@@ -93,10 +95,38 @@ foreach i : [[cc, 'libm_dep'], [cc_native, 'libm_native_dep']]
   endif
 endforeach
 
+subproject(
+  'libjpeg-turbo',
+  default_options : [
+    # skip the TurboJPEG wrapper
+    'jpeg-turbo=disabled',
+    'tests=disabled',
+    'simd=enabled',
+  ],
+)
+subproject(
+  'libtiff',
+  default_options : ['jpeg=enabled', 'zlib=enabled']
+)
+subproject(
+  'libopenjp2',
+  default_options : ['build_codec_apps=false'],
+)
+subproject(
+  'pixman',
+  default_options : ['ssse3=enabled'],
+)
+subproject(
+  'cairo',
+  default_options : ['dwrite=disabled', 'fontconfig=disabled', 'freetype=disabled', 'quartz=disabled', 'tests=disabled', 'glib=enabled'],
+)
+subproject('libremotetiff')
+
 # Dependencies
 feature_flags = []
 zlib_dep       = dependency('zlib')
 jpeg_dep       = dependency('libjpeg')
+#png_dep        = dependency('libpng')
 openjpeg_dep   = dependency('libopenjp2', version : '>=2.1.0')
 tiff_dep       = dependency('libtiff-4')
 glib_dep       = dependency('glib-2.0', version : '>=2.56')
@@ -104,9 +134,7 @@ gio_dep        = dependency('gio-2.0')
 gobject_dep    = dependency('gobject-2.0')
 cairo_dep      = dependency('cairo', version : '>=1.2')
 valgrind_dep   = dependency('valgrind', required : false)
-
-libremotetiff_proj = subproject('libremotetiff')
-libremotetiff_dep = libremotetiff_proj.get_variable('libremotetiff_dep')
+libremotetiff_dep = dependency('libremotetiff')
 
 doxygen = find_program(
   'doxygen',
@@ -230,6 +258,7 @@ config_h_include = include_directories('.')
 # Subdirs
 subdir('src')
 subdir('common')
+# subdir('tools')
 if not get_option('test').disabled()
   subdir('test')
 endif
